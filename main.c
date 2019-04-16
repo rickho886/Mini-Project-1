@@ -287,6 +287,7 @@ void statement(void)
         advance();
     } else {
         retp = expr();
+        if(retp->data != ASSIGN) error();
         if (match(END)) {
             evaluateTree(retp);
             freeTree(retp);
