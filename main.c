@@ -4,7 +4,7 @@
 #include <stdlib.h>
 #define MAXLEN 256
 #define TBLSIZE 65535
-typedef enum {UNKNOWN, END, INT, ID, ADDSUB, MULDIV, ANDORXOR, ASSIGN,
+typedef enum {UNKNOWN, END, INT, ID, ADDSUB, MULDIV, ASSIGN,
 LPAREN, RPAREN, ENDFILE} TokenSet;
 
 typedef enum {MISPAREN, NOTNUMID, NOTFOUND, RUNOUT} ErrorType;
@@ -36,7 +36,6 @@ extern BTNode* expr(void);
 extern void statement(void);
 extern void error();
 extern int evaluateTree(BTNode *root);
-extern void printPrefix(BTNode *root);
 extern void resetID();
 
 Symbol table[TBLSIZE];
@@ -47,11 +46,12 @@ static TokenSet getToken(void);
 static TokenSet lookahead = UNKNOWN;
 static char lexeme[MAXLEN];
 
-int regId = -1;
+int regId = 2;
 int varId = 3;
 int start = 1;
 int change = 0;
 int check = 1;
+int assign_check = 0;
 Symbol input[TBLSIZE];
 
 TokenSet getToken(void)
@@ -194,10 +194,12 @@ BTNode* factor(void)
 {
     BTNode* retp = NULL;
     char tmpstr[MAXLEN];
-
     if (match(INT)) {
         retp =  makeNode(INT, getLexeme());
         retp->val = getval();
+        if(retp->left != NULL || retp->right != NULL) {
+            error();
+        }
         advance();
     } else if (match(ID)) {
         BTNode* left = makeNode(ID, getLexeme());
@@ -206,10 +208,12 @@ BTNode* factor(void)
         advance();
         if (match(ASSIGN)) {
             retp = makeNode(ASSIGN, getLexeme());
+            assign_check++;
             advance();
             retp->right = expr();
             retp->left = left;
-        } else {
+        }
+        else {
             retp = left;
         }
     } else if (match(ADDSUB)) {
@@ -239,6 +243,7 @@ BTNode* factor(void)
     } else {
         error();
     }
+    if(assign_check > 1) error();
     return retp;
 }
 /*  term        := factor term_tail
@@ -278,9 +283,6 @@ void statement(void)
 {
     BTNode* retp;
     if (match(ENDFILE)) {
-        printf("MOV r0 [0]\n");
-        printf("MOV r1 [4]\n");
-        printf("MOV r2 [8]\n");
         printf("EXIT 0\n");
         exit(0);
     } else if (match(END)) {
@@ -304,24 +306,33 @@ void error()
 
 void resetID()
 {
-    regId = -1;
+    regId = 2;
     start = 1;
     change = 0;
     check = 1;
+    assign_check = 0;
 }
 
 int evaluateTree(BTNode *root)
 {
     int retval = 0, lv, rv;
+    int coba = 0;
     if (root != NULL)
     {
         switch (root->data)
         {
         case ID:
+            while(root->lexeme[coba] != '\0') {
+                if(isdigit(root->lexeme[coba]))
+                    error();
+                coba++;
+            }
             if(root->lexeme[1] == '\0' && (root->lexeme[0] == 'x' || root->lexeme[0] == 'y' || root->lexeme[0] == 'z')) {
-                if(change == 0) printf("MOV r%d [%d]\n", ++regId, (root->lexeme[0]-'x') * 4);
+                if(change == 0) {
+                    printf("MOV r%d r%d\n", ++regId, (root->lexeme[0]-'x'));
+                }
                 else if(change == 1) {
-                    printf("MOV [%d] r%d\n", (root->lexeme[0]-'x') * 4, regId);
+                    printf("MOV r%d r%d\n", (root->lexeme[0]-'x'), regId);
                     change ^= 1;
                 }
             }
@@ -399,30 +410,15 @@ int evaluateTree(BTNode *root)
                 printf("XOR r%d r%d\n", regId-1, regId);
                 regId--;
             }
-            else if (strcmp(root->lexeme, "=") == 0)
-                retval = setval(root->left->lexeme, rv);
-            break;
-        default:
-            retval = 0;
         }
-    }
-    return retval;
-}
-
-
-/* print a tree by pre-order. */
-void printPrefix(BTNode *root)
-{
-    if (root != NULL)
-    {
-        printf("%s ", root->lexeme);
-        printPrefix(root->left);
-        printPrefix(root->right);
     }
 }
 
 int main()
 {
+    printf("MOV r0 [0]\n");
+    printf("MOV r1 [4]\n");
+    printf("MOV r2 [8]\n");
     while (1) {
         statement();
     }
